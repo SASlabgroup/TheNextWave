@@ -1,0 +1,30 @@
+[project]
+name = "the-next-wave"
+version = "0.1.0"
+description = "Deterministic ocean wave prediction from sparse buoy data. This methodology and codes generate phase-resolved reconstructions of ocean waves over short time-space scales using measurements of wave motion collected by sparse arrays of Surface Wave Instrument Floats w/ Tracking (SWIFTs)"
+readme = "README.md"
+license = { text = "CC0-1.0" }
+maintainers = [{ name = "anderson", email = "anderson@mbari.org" }]
+# NOTE: "requires-python" is usually located here, but a workaround for a known ROS 2 bug:
+#
+#           https://github.com/colcon/colcon-python-setup-py/issues/33
+#
+#       requires this to be commented out. uv will complain with a warning, but you may ignore it as
+#       the ".python-version" file tells it which python version to use.
+#requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "netcdf4>=1.7.4",
+    "numpy>=2.4.2",
+    "pandas>=3.0.0",
+    "pooch>=1.9.0",
+    "pyarrow>=23.0.0",
+    "scipy>=1.17.0",
+    "setuptools>=82.0.0",
+    "tqdm>=4.67.3",
+    "utm>=0.8.1",
+    "xarray>=2026.1.0",
+]
+
+[project.scripts]
+the_next_wave_example = "the_next_wave.example:main"

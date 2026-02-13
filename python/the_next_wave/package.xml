@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>the_next_wave</name>
+  <version>0.1.0</version>
+  <description>Deterministic ocean wave prediction from sparse buoy data. This methodology and codes generate phase-resolved reconstructions of ocean waves over short time-space scales using measurements of wave motion collected by sparse arrays of Surface Wave Instrument Floats w/ Tracking (SWIFTs).</description>
+  <maintainer email="anderson@mbari.org">anderson</maintainer>
+  <license>CC0-1.0</license>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
