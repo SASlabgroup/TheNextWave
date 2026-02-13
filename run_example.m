@@ -11,7 +11,7 @@
 clear
 
 %% prepare a video of the results (fine to skip this)
-makevideo = false;
+makevideo = true;
 if makevideo
     vidObj = VideoWriter('NextWaveExample','MPEG-4');
     open(vidObj);
@@ -93,7 +93,7 @@ ce = 9.8 * Te / (2 * 3.14); % phase speed at centroid wave period
 % step through temporal windows making predictions
 NTe = 10; % number of wave periods to use in the input window (usually 10)
 
-for ti = 1:fs:length(tin) % for smooth results, increment the windows slowly (every 1 s, thus increment indexing by data sampling rate fs)
+for ti = 1:round(fs):length(tin) % for smooth results, increment the windows slowly (every 1 s, thus increment indexing by data sampling rate fs)
 
     inputwindow = ti + (1:(NTe * Te * fs)); % indices for the samples to be used
 
@@ -133,12 +133,12 @@ for ti = 1:fs:length(tin) % for smooth results, increment the windows slowly (ev
         axis([0 500 0 500]), xlabel('x [m]'), ylabel('y [m]'), grid, axis equal
 
         % input
-        subplot(6,2,1),  plot(tin(inputwindow,:),zin(inputwindow,:)), ylabel('z in [m/s]')
+        subplot(6,2,1),  plot(tin(inputwindow,:),zin(inputwindow,:)), ylabel('z in [m]')
         subplot(6,2,3),  plot(tin(inputwindow,:),uin(inputwindow,:)), ylabel('u in [m/s]')
         subplot(6,2,5), plot(tin(inputwindow,:),vin(inputwindow,:)), ylabel('v in [m/s]')
 
         % reconstruction
-        subplot(6,2,7),  plot(tin(inputwindow,:),zr), ylabel('z out [m/s]')
+        subplot(6,2,7),  plot(tin(inputwindow,:),zr), ylabel('z out [m]')
         subplot(6,2,9),  plot(tin(inputwindow,:),ur), ylabel('u out [m/s]')
         subplot(6,2,11), plot(tin(inputwindow,:),vr), ylabel('v out [m/s]')
         xlabel('t [s]')
