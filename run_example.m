@@ -13,24 +13,32 @@ clear
 %% prepare a video of the results (fine to skip this)
 makevideo = true;
 if makevideo
-    vidObj = VideoWriter('NextWaveExample','MPEG-4');
+    vidObj = VideoWriter('NextWaveExample1_FixedTarget','MPEG-4');
     open(vidObj);
 end
 
-%% local geometry
+%% local geometry (user defined)
 latorigin = 41.6878; % origin of local coordinate system (everything needs to be within a few 100 m)
 lonorigin = -9.0545; % origin of local coordinate system (everything needs to be within a few 100 m)
 rotation = 180;  % rotation of local coordinate system ** THIS MUST BE CONSISTENT WITH USAGE OF VELOCITY COMPONENTS **
 % use rotation = 180 if using GenericCoordinateTransform.m from SWIFT codes repo
 
-xtarget = 200; % user determined target location for prediction in local coordinate system [meters]
-ytarget = 200; % user determined target location for prediction in local coordinate system [meters]
+%% target location(s) for prediction: can be user defined, or a buoy from the array itself (for testing)
 
+fixedtarget = true;
+buoytarget = false;
+
+if fixedtarget 
+    xtarget = 250; % user determined target location for prediction in local coordinate system [meters]
+    ytarget = 10; % user determined target location for prediction in local coordinate system [meters]
+elseif buoytarget
+    targetbuoyindex = 4;  % which buoys to target (best if down-wave of others)
+end
 
 %% load example "burst" of raw data from SBG Ellipse sesnor running at 5 Hz on each buoy
 skipwarmup = 200; % number of samples to skip at the start of bursts (i.e., skipping AHRS initialization)
 burstend = 2740;  % number of samples defining end of burst ... usually 2742, needs to be same for all buoys
-nbuoys = 4;
+nbuoys = 4;  % examples have 4 buoys available.  Usually use 3 and test prediction against 4th one. 
 
 flist = dir('./ExampleData/SWIFT*_SBG_12Sep2022_07_01.mat'); % use '12-Sep-2022 07:00:00', which is burst index 92 from 'SWIFT22_DIGIFLOAT_07Sep2022-04Oct2022_reprocessedSBG.mat'
 
@@ -68,6 +76,23 @@ for fi=1:nbuoys
 
 end
 
+if fixedtarget
+    ttarget = tin(:,1);  % create timestamps for the wave predictions with same sampling rate as input (for convenience)
+elseif buoytarget
+    xtarget = xin(:, targetbuoyindex);
+    ytarget = yin(:, targetbuoyindex);
+    ztarget = zin(:, targetbuoyindex); % groundtruth measurements from target buoy location (for testing)
+    utarget = uin(:, targetbuoyindex); % groundtruth measurements from target buoy location (for testing)
+    vtarget = vin(:, targetbuoyindex); % groundtruth measurements from target buoy location (for testing)
+    ttarget = tin(:, targetbuoyindex); % groundtruth measurements from target buoy location (for testing)
+    zin(:,targetbuoyindex) = []; % remove target buoy from alorithm input
+    uin(:,targetbuoyindex) = []; % remove target buoy from alorithm input
+    vin(:,targetbuoyindex) = []; % remove target buoy from alorithm input
+    tin(:,targetbuoyindex) = []; % remove target buoy from alorithm input
+    xin(:,targetbuoyindex) = []; % remove target buoy from alorithm input
+    yin(:,targetbuoyindex) = []; % remove target buoy from alorithm input
+end
+
 % reverse the direction of the vertical displacement (becasue SBG sensor is mounted upside in SWIFT buoys)
 zin = -zin;
 
@@ -76,12 +101,13 @@ fs = 1./mean(mean(diff(tin))); % raw data sampling rate (Hz)
 
 %% load directional spectra for this example (actual processing using SBGwaves.m from "SWIFTcodes" repo)
 % can be determined from single buoy or [better] an average of all buoys
-%
-% this example preprocessed from:
-%load('SWIFT22_DIGIFLOAT_07Sep2022-04Oct2022_reprocessedSBG.mat')
-%[Etheta theta E f dir spread spread2 spread2alt ] = SWIFTdirectionalspectra(SWIFT(92), true, true);
-%wavespec.Etheta = Etheta; wavespec.theta = theta; wavespec.f = f;
-%save wavespec wavespec
+% note that this background spectra should be in the nautical direction (i.e., direction FROM which waves are coming, not towards)
+
+% Example 1 preprocessed from:
+% load('/Volumes/Data/DigiFloat/DIGIFLOAT_Portugal/SWIFT22_DIGIFLOAT_fall2022_part1/SWIFT22_DIGIFLOAT_07Sep2022-04Oct2022_reprocessedSBG.mat')
+% [Etheta theta E f dir spread spread2 spread2alt ] = SWIFTdirectionalspectra(SWIFT(92), true, true);
+% wavespec.Etheta = Etheta; wavespec.theta = theta; wavespec.f = f; Hs = SWIFT(92).sigwaveheight; Dp = SWIFT(92).peakwavedirT; Tp = SWIFT(92).peakwaveperiod;
+% save wavespec wavespec Hs Tp Dp
 
 load ./ExampleData/wavespec.mat
 
@@ -89,8 +115,11 @@ Te = sum(wavespec.Etheta(:))./sum(sum(wavespec.Etheta,2) .* wavespec.f); % centr
 ce = 9.8 * Te / (2 * 3.14); % phase speed at centroid wave period
 
 
-%% run algorithm for a given output location
+%% run algorithm for a given target location
 % step through temporal windows making predictions
+% not the timestamps for prediction are not required to be same sampling rate as input timeseries 
+% (though are set up that way for these examples)
+
 NTe = 10; % number of wave periods to use in the input window (usually 10)
 
 for ti = 1:round(fs):length(tin) % for smooth results, increment the windows slowly (every 1 s, thus increment indexing by data sampling rate fs)
@@ -100,12 +129,24 @@ for ti = 1:round(fs):length(tin) % for smooth results, increment the windows slo
     if ~any(inputwindow > length(tin))
 
         % output times and locations (should be within a few wave periods and wavelengths of input)
-        maxtargetdistance = max( max( sqrt( (xin(inputwindow,:)-xtarget).^2 + (yin(inputwindow,:)-ytarget).^2 ) ) ); % how far is target location from buoy array
-        leadtime = maxtargetdistance / ce; % how far to predict ih the future (recommend as max distance between target and buoys, divided by phase speed)
+        maxtargetdistance = max( max( sqrt( (xin(inputwindow,:)-max(xtarget)).^2 + (yin(inputwindow,:)-max(ytarget)).^2 ) ) ); % how far is target location from buoy array
+        leadtime = maxtargetdistance / ce; % how many seconds to predict ih the future (recommend as max distance between target and buoys, divided by phase speed)
         % any more than this and the information from the farthest buoy has already propagated beyond the target
-        tpred = max(max(tin(inputwindow,:))) + (1:leadtime);  % can be same as input inputwindow, or can extend abit into future or past
-        xpred = xtarget * ones(size(tpred));  % size is [times, locations] just like input
-        ypred = ytarget * ones(size(tpred));  % size is [times, locations] just like input
+        tlast = max( max(tin(inputwindow,:)) );  % last timestamp of the input window
+        tpredindices = find( ttarget >= tlast & ttarget<=(tlast + leadtime ) );
+        if fixedtarget && ~isempty(tpredindices)
+            tpred = ttarget(tpredindices); % timestamps for the prediction ** these could be user defined instead **
+            xpred = xtarget * ones(size(tpred));  % size is [times, locations] just like input
+            ypred = ytarget * ones(size(tpred));  % size is [times, locations] just like input
+        elseif buoytarget && ~isempty(tpredindices)
+            tpred = ttarget( tpredindices ); % timestamps for the prediction ** these could be user defined instead **
+            xpred = xtarget( tpredindices )';
+            ypred = ytarget( tpredindices )';
+        else
+            tpred = NaN; % timestamps for the prediction ** these could be user defined instead **
+            xpred = Nan(size(tpred));
+            ypred = Nan(size(tpred));
+        end
 
         [prediction, reconstruction, params, t] = leastSquaresWavePropagation(zin(inputwindow,:), uin(inputwindow,:), vin(inputwindow,:), ...
             tin(inputwindow,:), xin(inputwindow,:), yin(inputwindow,:), tpred, xpred, ypred, wavespec);
@@ -116,9 +157,9 @@ for ti = 1:round(fs):length(tin) % for smooth results, increment the windows slo
         vout = prediction(:,3);
 
         reconstruction = reshape(reconstruction,length(inputwindow),[]);
-        zr = reconstruction(:,1:nbuoys);
-        ur = reconstruction(:,nbuoys+(1:nbuoys));
-        vr = reconstruction(:,2*nbuoys+(1:nbuoys));
+        zr = reconstruction(:,1:size(zin,2));
+        ur = reconstruction(:,size(zin,2)+(1:size(zin,2)));
+        vr = reconstruction(:,2*size(zin,2)+(1:size(zin,2)));
 
         % option to rerun for a different ouput location using same solution
         %prediction = reprocess_LS_predictions(xpred,ypred,tpred,params)
@@ -126,27 +167,53 @@ for ti = 1:round(fs):length(tin) % for smooth results, increment the windows slo
         % plot the results
         figure(1), clf
 
+        % incident spectra
+        subplot(2,4,3)
+        polarPcolor(wavespec.f', wavespec.theta, log10(wavespec.Etheta'))
+        title(['Hs = ' num2str(Hs,2) ' m, Dp (FROM) = ' num2str(Dp,3) 'deg'])
+
         % map
-        subplot(2,2,2)
-        plot(xin(inputwindow,:), yin(inputwindow,:),'x','linewidth',2), hold on  % input positions
-        plot(xpred,ypred,'ko','linewidth',2,'markersize',8)  % output (target) positions
-        axis([0 500 0 500]), xlabel('x [m]'), ylabel('y [m]'), grid, axis equal
+        subplot(2,4,4)
+        plot(xin(inputwindow,:), yin(inputwindow,:),'x','linewidth',2), grid, hold on  % input positions
+                if buoytarget
+                    plot(xtarget(inputwindow), ytarget(inputwindow),'x','linewidth',2),
+                end
+        plot(xpred,ypred,'ko','linewidth',2,'markersize',12), hold on  % output (target) positions
+        axis([ (min(xin(:))-200) (max(xin(:))+200) (min(yin(:))-200) (max(yin(:))+200)  ]) , xlabel('x [m]'), ylabel('y [m]'), grid, axis equal
+        quiver(-1000,0,-sind(Dp),cosd(Dp),100,'filled','LineWidth',1,'color',[0 0 0])
+        %legend('buoys')
 
         % input
-        subplot(6,2,1),  plot(tin(inputwindow,:),zin(inputwindow,:)), ylabel('z in [m]')
-        subplot(6,2,3),  plot(tin(inputwindow,:),uin(inputwindow,:)), ylabel('u in [m/s]')
-        subplot(6,2,5), plot(tin(inputwindow,:),vin(inputwindow,:)), ylabel('v in [m/s]')
+        subplot(6,2,1),  plot(tin(inputwindow,:),zin(inputwindow,:)), ylabel('z in [m]'), set(gca,'YLim',round([-1 1]*Hs))
+        subplot(6,2,3),  plot(tin(inputwindow,:),uin(inputwindow,:)), ylabel('u in [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        subplot(6,2,5), plot(tin(inputwindow,:),vin(inputwindow,:)), ylabel('v in [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
 
         % reconstruction
-        subplot(6,2,7),  plot(tin(inputwindow,:),zr), ylabel('z out [m]')
-        subplot(6,2,9),  plot(tin(inputwindow,:),ur), ylabel('u out [m/s]')
-        subplot(6,2,11), plot(tin(inputwindow,:),vr), ylabel('v out [m/s]')
+        subplot(6,2,7),  plot(tin(inputwindow,:),zr), ylabel('z out [m]'), set(gca,'YLim',round([-1 1]*Hs))
+        subplot(6,2,9),  plot(tin(inputwindow,:),ur), ylabel('u out [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        subplot(6,2,11), plot(tin(inputwindow,:),vr), ylabel('v out [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
         xlabel('t [s]')
 
         % predictions
-        subplot(6,2,8), plot(tpred,zout,'k'), ylabel('z_p [m]')
-        subplot(6,2,10), plot(tpred,uout,'k'), ylabel('u_p [m/s]')
-        subplot(6,2,12), plot(tpred,vout,'k'), ylabel('v_p [m/s]'),
+        subplot(6,2,8), plot(tpred,zout,'k'), hold on, ylabel('z_p [m]'), set(gca,'YLim',round([-1 1]*Hs))
+        if fixedtarget
+            plot(tpred, zin(tpredindices,4),'k--','linewidth',2),
+        elseif buoytarget
+            plot(tpred, ztarget(tpredindices),'k--','linewidth',2),
+        end
+        title('predictions')
+        subplot(6,2,10), plot(tpred,uout,'k'), hold on, ylabel('u_p [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        if fixedtarget
+            plot(tpred, uin(tpredindices,4),'k--','linewidth',2),
+        elseif buoytarget
+            plot(tpred, utarget(tpredindices),'k--','linewidth',2),
+        end
+        subplot(6,2,12), plot(tpred,vout,'k'), hold on, ylabel('v_p [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        if fixedtarget
+            plot(tpred, vin(tpredindices,4),'k--','linewidth',2),
+        elseif buoytarget
+            plot(tpred, vtarget(tpredindices),'k--','linewidth',2),
+        end
         xlabel('t [s]')
 
         if makevideo
