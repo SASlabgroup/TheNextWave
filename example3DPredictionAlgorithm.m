@@ -2,7 +2,7 @@ clear; close all; clc;
 
 %% Directories
 addpath(genpath('..\SWIFT-codes'))
-exampleNum = 1;
+exampleNum = 2;
 dataFolder = fullfile(pwd,strcat('ExampleData',num2str(exampleNum)));
 
 %% Initialize structures
