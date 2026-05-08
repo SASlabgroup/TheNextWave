@@ -8,13 +8,13 @@
 %
 % J. Thomson, 1/2026
 
-clear
+clear; close all; clc; 
 
 %% set up the example 
-examplenum = 2; 
-fixedtarget = false;
-buoytarget = true;
-makevideo = true;
+examplenum = 1; 
+fixedtarget = true;
+buoytarget = false;
+makevideo = false;
 
 
 %% prepare a video of the results (fine to skip this)
@@ -47,7 +47,7 @@ skipwarmup = 200; % number of samples to skip at the start of bursts (i.e., skip
 burstend = 2700;  % number of samples defining end of burst ... usually 2742, needs to be same for all buoys
 nbuoys = 4;  % examples have 4 buoys available.  Usually use 3 and test prediction against 4th one. 
 
-flist = dir(['./ExampleData' num2str(examplenum) '/SWIFT*.mat']); % use '12-Sep-2022 07:00:00', which is burst index 92 from 'SWIFT22_DIGIFLOAT_07Sep2022-04Oct2022_reprocessedSBG.mat'
+flist = dir(['../ExampleData' num2str(examplenum) '/SWIFT*.mat']); % use '12-Sep-2022 07:00:00', which is burst index 92 from 'SWIFT22_DIGIFLOAT_07Sep2022-04Oct2022_reprocessedSBG.mat'
 
 % preallocate input arrays
 zin = NaN( length(skipwarmup:burstend), nbuoys);
@@ -62,7 +62,7 @@ yin = NaN( length(skipwarmup:burstend), nbuoys);
 % this also assumes buoy system clocks are sync'd (and thus relative seconds since start of burst are consistent)
 for fi=1:nbuoys
 
-    load(['./ExampleData' num2str(examplenum)  '/' flist(fi).name])
+    load(['../ExampleData' num2str(examplenum)  '/' flist(fi).name])
     zin(:,fi) = sbgData.ShipMotion.heave(skipwarmup:burstend)'; % vertical displacement used to invert for wave propagation
     ztime = sbgData.ShipMotion.time_stamp(skipwarmup:burstend)'./1e6; % time since burst started (microseconds --> seconds)
     uin(:,fi) = sbgData.GpsVel.vel_e(skipwarmup:burstend)'; % lateral velocity used to invert for wave propagation
@@ -105,6 +105,44 @@ zin = -zin;
 
 fs = 1./mean(mean(diff(tin))); % raw data sampling rate (Hz)
 
+%% Visualize time series data
+f1 = figure();
+ax1(1) = subplot(5,1,1);
+plot(tin,xin)
+ylabel('$x_{in}$')
+
+ax1(2) = subplot(5,1,2);
+plot(tin,yin)
+ylabel('$y_{in}$')
+
+ax1(3) = subplot(5,1,3);
+plot(tin,zin)
+ylabel('$z_{in}$')
+
+ax1(4) = subplot(5,1,4);
+plot(tin,uin)
+ylabel('$u_{in}$')
+
+ax1(5) = subplot(5,1,5);
+plot(tin,vin)
+xlabel('Time [s]')
+ylabel('$v_{in}$')
+
+linkaxes(ax1,'x')
+
+
+
+%% Visualize spectra
+% theta = wavespec.theta;
+% Etheta = wavespec.Etheta;
+% f = wavespec.f;
+% theta_plot = [theta(1:180), 360];
+% Etheta_plot = [Etheta(:,1:180), Etheta(:,1)];
+% ff = figure();
+% polarPcolor(f', theta_plot, log10(Etheta_plot'));
+% colormap('parula')
+% colorbar
+
 
 %% load directional spectra for this example (actual processing using SBGwaves.m from "SWIFTcodes" repo)
 % can be determined from single buoy or [better] an average of all buoys
@@ -118,10 +156,39 @@ fs = 1./mean(mean(diff(tin))); % raw data sampling rate (Hz)
 %wavespec.Etheta = Etheta; wavespec.theta = theta; wavespec.f = f; Hs = SWIFT(exampleindex).sigwaveheight; Dp = SWIFT(exampleindex).peakwavedirT; Tp = SWIFT(exampleindex).peakwaveperiod;
 %save wavespec wavespec Hs Tp Dp
 
-load(['./ExampleData' num2str(examplenum) '/wavespec.mat']);
+load(['../ExampleData' num2str(examplenum) '/wavespec.mat']);
 
 Te = sum(wavespec.Etheta(:))./sum(sum(wavespec.Etheta,2) .* wavespec.f); % centroid wave period
+fe = 1/Te;
+depth = 95;
 ce = 9.8 * Te / (2 * 3.14); % phase speed at centroid wave period
+
+ke = wavenumber(fe,depth);
+lambdae = 2*pi/ke;
+
+markerVec = 'x*s^';
+colors = colormap('lines');
+thetaVec = 0:0.01:2*pi;
+f2 = figure();
+% for ii = 1:length(tin)
+    plot(0,0,'ko')
+    hold on
+    grid on
+    for jj = 1:size(xin,2)
+        xcirc = mean(xin(:,jj)) + (lambdae/4)*cos(thetaVec);
+        ycirc = mean(yin(:,jj)) + (lambdae/4)*sin(thetaVec);
+        plot(xin(:,jj)/lambdae,yin(:,jj)/lambdae,'Color',colors(jj,:),'Marker',markerVec(jj),'LineStyle','-')
+        plot(xcirc/lambdae,ycirc/lambdae,'r')
+    end
+    xlim([0 250]/lambdae)
+    ylim([0 250]/lambdae)
+    axis equal
+    xlabel('$\frac{x}{\lambda_e}$')
+    xlabel('$\frac{y}{\lambda_e}$')
+    % title(strcat("time = ",num2str(tin(ii))," s"))
+    pause(1/fs)
+    % clf
+% end
 
 
 %% run algorithm for a given target location
@@ -170,66 +237,153 @@ for ti = 1:round(fs):length(tin) % for smooth results, increment the windows slo
         ur = reconstruction(:,size(zin,2)+(1:size(zin,2)));
         vr = reconstruction(:,2*size(zin,2)+(1:size(zin,2)));
 
+        f3 = figure();
+        for ii = 1:nbuoys
+            subplot(nbuoys,1,ii)
+            plot(NaN,NaN,'-','Color',colors(1,:))
+            hold on
+            grid on
+            plot(NaN,NaN,'k-')
+            plot(NaN,NaN,'-','Color',[1 1 1]*0.7)
+    
+            plot(tin(inputwindow,ii),zin(inputwindow,ii),'Color',colors(ii,:))
+            hold on
+            grid on
+            plot(tin(inputwindow,ii),zr(:,ii),'k')
+
+            plot(tpred_true(:,ii),zpred_true(:,ii),'Color',colors(ii,:))
+            plot(tpred(:,ii),zout(:,ii),'k')
+        
+            xlim([40 150])
+            ylabel('$z$ [m]')
+        
+            if(ii == 1)
+
+                title('Wave Elevation Reconstruction and Prediction')
+                legend('Measured','Recreated','Prediction')
+            end
+        end
+        xlabel('Time [s]')
+    
+        % velocities
+        if(params.use_vel)
+            f4 = figure();
+            for ii = 1:nbuoys
+                subplot(nbuoys,1,ii)
+                plot(NaN,NaN,'-','Color',colors(1,:))
+                hold on
+                grid on
+                plot(NaN,NaN,'k-')
+                plot(NaN,NaN,'-','Color',[1 1 1]*0.7)
+        
+                plot(tin(inputwindow,ii),uin(inputwindow,ii),'Color',colors(ii,:))
+                hold on
+                grid on
+                plot(tin(inputwindow,ii),ur(:,ii),'k')
+                 
+                xlim([40 150])
+                ylabel('$u$ [m/s]')
+            
+                plot(tpred_true(:,ii),upred_true(:,ii),'Color',colors(ii,:))
+                plot(tpred(:,ii),uout(:,ii),'k')
+            end
+            xlabel('Time [s]')
+        
+            f5 = figure();
+            for ii = 1:nbuoys
+                subplot(nbuoys,1,ii)
+                plot(NaN,NaN,'-','Color',colors(1,:))
+                hold on
+                grid on
+                plot(NaN,NaN,'k-')
+                plot(NaN,NaN,'-','Color',[1 1 1]*0.7)
+        
+                plot(tin(inputwindow,ii),vin(inputwindow,ii),'Color',colors(ii,:))
+                hold on
+                grid on
+                plot(tin(inputwindow,ii),vr(:,ii),'k')
+            
+                plot(tpred_true(:,ii),vpred_true(:,ii),'Color',colors(ii,:))
+                plot(tpred(:,ii),vout(:,ii),'k')
+            
+                xlim([40 150])
+                ylabel('$v$ [m/s]')
+            
+            end
+            xlabel('Time [s]')
+        end
+
+        f6 = figure();
+        plot(params.A,'ko')
+        hold on
+        grid on
+        plot(params.amps/sqrt(2),'Color',[1 1 1]*0.7)
+        plot(-params.amps/sqrt(2),'Color',[1 1 1]*0.7)
+        legend('A','lims')
+        xlabel('Index')
+        ylabel('Amplitude')
+        title('Solution Amplitudes and Limits')
+
         % option to rerun for a different ouput location using same solution
         %prediction = reprocess_LS_predictions(xpred,ypred,tpred,params)
 
-        % plot the results
-        figure(1), clf
-
-        % incident spectra
-        subplot(2,4,3)
-        polarPcolor(wavespec.f', wavespec.theta, log10(wavespec.Etheta'))
-        title(['Hs = ' num2str(Hs,2) ' m, Dp (FROM) = ' num2str(Dp,3) 'deg'])
-
-        % map
-        subplot(2,4,4)
-        plot(xin(inputwindow,:), yin(inputwindow,:),'x','linewidth',2), grid, hold on  % input positions
-                if buoytarget
-                    plot(xtarget(inputwindow), ytarget(inputwindow),'x','linewidth',2),
-                end
-        plot(xpred,ypred,'ko','linewidth',2,'markersize',12), hold on  % output (target) positions
-        axis([ (min(xin(:))-200) (max(xin(:))+200) (min(yin(:))-200) (max(yin(:))+200)  ]) , xlabel('x [m]'), ylabel('y [m]'), grid, axis equal
-        quiver(-150,50,-sind(Dp),-cosd(Dp),100,'filled','LineWidth',1,'color',[0 0 0])
-        %legend('buoys')
-
-        % input
-        subplot(6,2,1),  plot(tin(inputwindow,:),zin(inputwindow,:)), ylabel('z in [m]'), set(gca,'YLim',round([-1 1]*Hs)), title('input data')
-        subplot(6,2,3),  plot(tin(inputwindow,:),uin(inputwindow,:)), ylabel('u in [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
-        subplot(6,2,5), plot(tin(inputwindow,:),vin(inputwindow,:)), ylabel('v in [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
-        set(gca,'YTickLabel',[])
-
-        % reconstruction
-        subplot(6,2,7),  plot(tin(inputwindow,:),zr), ylabel('z out [m]'), set(gca,'YLim',round([-1 1]*Hs)), title('reconstructions')
-        subplot(6,2,9),  plot(tin(inputwindow,:),ur), ylabel('u out [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
-        subplot(6,2,11), plot(tin(inputwindow,:),vr), ylabel('v out [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
-        xlabel('t [s]')
-
-        % predictions
-        subplot(6,2,8), plot(tpred,zout,'k'), hold on, ylabel('z_p [m]'), set(gca,'YLim',round([-1 1]*Hs)), title('predictions')
-
-        if fixedtarget
-            %plot(tpred, zin(tpredindices,4),'k--','linewidth',2),
-        elseif buoytarget
-            plot(tpred, ztarget(tpredindices),'k--','linewidth',2),
-        end
-        subplot(6,2,10), plot(tpred,uout,'k'), hold on, ylabel('u_p [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
-        if fixedtarget
-            %plot(tpred, uin(tpredindices,4),'k--','linewidth',2),
-        elseif buoytarget
-            plot(tpred, utarget(tpredindices),'k--','linewidth',2),
-        end
-        subplot(6,2,12), plot(tpred,vout,'k'), hold on, ylabel('v_p [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
-        if fixedtarget
-            %plot(tpred, vin(tpredindices,4),'k--','linewidth',2),
-        elseif buoytarget
-            plot(tpred, vtarget(tpredindices),'k--','linewidth',2),
-        end
-        xlabel('t [s]')
-
-        if makevideo
-            currFrame = getframe(gcf);
-            writeVideo(vidObj,currFrame);
-        end
+        % % plot the results
+        % figure(1), clf
+        % 
+        % % incident spectra
+        % subplot(2,4,3)
+        % polarPcolor(wavespec.f', wavespec.theta, log10(wavespec.Etheta'))
+        % title(['Hs = ' num2str(Hs,2) ' m, Dp (FROM) = ' num2str(Dp,3) 'deg'])
+        % 
+        % % map
+        % subplot(2,4,4)
+        % plot(xin(inputwindow,:), yin(inputwindow,:),'x','linewidth',2), grid, hold on  % input positions
+        %         if buoytarget
+        %             plot(xtarget(inputwindow), ytarget(inputwindow),'x','linewidth',2),
+        %         end
+        % plot(xpred,ypred,'ko','linewidth',2,'markersize',12), hold on  % output (target) positions
+        % axis([ (min(xin(:))-200) (max(xin(:))+200) (min(yin(:))-200) (max(yin(:))+200)  ]) , xlabel('x [m]'), ylabel('y [m]'), grid, axis equal
+        % quiver(-150,50,-sind(Dp),-cosd(Dp),100,'filled','LineWidth',1,'color',[0 0 0])
+        % %legend('buoys')
+        % 
+        % % input
+        % subplot(6,2,1),  plot(tin(inputwindow,:),zin(inputwindow,:)), ylabel('z in [m]'), set(gca,'YLim',round([-1 1]*Hs)), title('input data')
+        % subplot(6,2,3),  plot(tin(inputwindow,:),uin(inputwindow,:)), ylabel('u in [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        % subplot(6,2,5), plot(tin(inputwindow,:),vin(inputwindow,:)), ylabel('v in [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        % set(gca,'YTickLabel',[])
+        % 
+        % % reconstruction
+        % subplot(6,2,7),  plot(tin(inputwindow,:),zr), ylabel('z out [m]'), set(gca,'YLim',round([-1 1]*Hs)), title('reconstructions')
+        % subplot(6,2,9),  plot(tin(inputwindow,:),ur), ylabel('u out [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        % subplot(6,2,11), plot(tin(inputwindow,:),vr), ylabel('v out [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        % xlabel('t [s]')
+        % 
+        % % predictions
+        % subplot(6,2,8), plot(tpred,zout,'k'), hold on, ylabel('z_p [m]'), set(gca,'YLim',round([-1 1]*Hs)), title('predictions')
+        % 
+        % if fixedtarget
+        %     %plot(tpred, zin(tpredindices,4),'k--','linewidth',2),
+        % elseif buoytarget
+        %     plot(tpred, ztarget(tpredindices),'k--','linewidth',2),
+        % end
+        % subplot(6,2,10), plot(tpred,uout,'k'), hold on, ylabel('u_p [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        % if fixedtarget
+        %     %plot(tpred, uin(tpredindices,4),'k--','linewidth',2),
+        % elseif buoytarget
+        %     plot(tpred, utarget(tpredindices),'k--','linewidth',2),
+        % end
+        % subplot(6,2,12), plot(tpred,vout,'k'), hold on, ylabel('v_p [m/s]'), set(gca,'YLim',round([-1 1]*Hs/Te*6.28))
+        % if fixedtarget
+        %     %plot(tpred, vin(tpredindices,4),'k--','linewidth',2),
+        % elseif buoytarget
+        %     plot(tpred, vtarget(tpredindices),'k--','linewidth',2),
+        % end
+        % xlabel('t [s]')
+        % 
+        % if makevideo
+        %     currFrame = getframe(gcf);
+        %     writeVideo(vidObj,currFrame);
+        % end
 
     end
 end
